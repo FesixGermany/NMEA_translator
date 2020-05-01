@@ -1,0 +1,13 @@
+.vs/
+*.atsln
+*.xml
+*.cproj
+*.d
+*.o
+*.mk
+Makefile
+*.eep
+*.elf
+*.lss
+*.map
+*.srec
