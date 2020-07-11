@@ -13,8 +13,6 @@
  *
  * I do not call myself a programmer, writing this code was a long nerve wracking journey for me, I'm sure there are ways to write the code shorter and better but works for me.
  *
- * To do: Implement speed and course
- *
  * Data input: PB2
  * Data output: PB0 or PB1
  */ 
@@ -38,10 +36,11 @@ volatile uint8_t rxtemp = 0;
 volatile uint8_t ByteReceived = 0;
 uint16_t frame = 0;
 
-char utc[6], status, lat[8], lon[8], speed[6], course[6], date[6], checksum[2];
+char utc[6], status, lat[8] = {"0000000N"}, lon[9] = {"00000000E"}, speed[6] = {"000000"}, course[3] = {"000"}, date[6], checksum[2];
 char temp;
-int i;
-char OutputString[56];
+uint8_t i;
+uint8_t counter;
+char OutputString[67];
 
 // declarations of functions
 void SendCharacter(char data);
@@ -105,32 +104,90 @@ int main(void)
 		lat[3] = ReceiveCharacter();
 		ReceiveCharacter();					// .
 		lat[4] = ReceiveCharacter();
+		
+		if(lat[0] == ',')					// if no position and movement data available
+		{
+			for(i = 0; i < 5; i++)			// clear received characters
+				lat[i] = '0';
+			
+			goto SKIPACQ;					// skip to acquisition of date
+		}
+		
 		lat[5] = ReceiveCharacter();
 		lat[6] = ReceiveCharacter();
 		ReceiveCharacter();					// ignore 4th decimal place
 		ReceiveCharacter();					// ,
 		lat[7] = ReceiveCharacter();		// N/S
 		ReceiveCharacter();					// ,
-		ReceiveCharacter();					// ignore >99°
 		lon[0] = ReceiveCharacter();		// receive longitude
 		lon[1] = ReceiveCharacter();
 		lon[2] = ReceiveCharacter();
 		lon[3] = ReceiveCharacter();
-		ReceiveCharacter();					// .
 		lon[4] = ReceiveCharacter();
+		ReceiveCharacter();					// .
 		lon[5] = ReceiveCharacter();
 		lon[6] = ReceiveCharacter();
+		lon[7] = ReceiveCharacter();
 		ReceiveCharacter();					// ignore 4th decimal place
 		ReceiveCharacter();					// ,
-		lon[7] = ReceiveCharacter();		// E/W
+		lon[8] = ReceiveCharacter();		// E/W
 		ReceiveCharacter();					// ,
-		/* speed and course not implemented yet */
-		while(ReceiveCharacter() != ',')
+		
+		// receive speed (knots) 1 to 4 digits
+		for(i = 0; i < 6; i ++)				// reset variables with 0
+			speed[i] = '0';
+		counter = 0;
+		i = 0;
+		while(ReceiveCharacter() != '.')	// receive digits and count them
+		{
+			speed[i] = ByteReceived;
+			counter ++;
+			i ++;
+			
+			if(speed[0] == ',')				// if no movement data received
+			{
+				speed[0] = '0';				// reset value
+				ReceiveCharacter();			// skip second ','
+				goto SKIPACQ;				// skip to acquisition of date
+			}
+		}
+		speed[4] = ReceiveCharacter();		// first decimal place
+		speed[5] = ReceiveCharacter();		// second decimal place
+		ReceiveCharacter();					// ,
+		for(i = 0; i < 4; i ++)				// convert according to number of received digits
+			speed[3 - i] = speed[0 - i + counter - 1];
+		
+		if(counter != 4)					// fill space left from digits with 0
+		{
+			for(i = 0; i < 4 - counter; i ++)
+				speed[i] = '0';
+		}
+		
+		// receive course (degrees) 1 to 3 digits
+		for(i = 0; i < 3; i ++)				// reset variables
+			course[i] = '0';
+		counter = 0;
+		i = 0;
+		while(ReceiveCharacter() != '.')	// receive digits and count them
+		{
+			course[i] = ByteReceived;
+			counter ++;
+			i ++;
+		}
+		while(ReceiveCharacter() != ',')	// ignore decimal places
 		{
 		}
-		while(ReceiveCharacter() != ',')
+		for(i = 0; i < 3; i ++)				// convert according to number of received digits
+			course[2 - i] = course[0 - i + counter - 1];
+		
+		if (counter != 4)					// fill space left from digits with 0
 		{
+			for(i = 0; i < 3 - counter; i ++)
+				course[i] = '0';
 		}
+		
+		SKIPACQ:							// jump here if no position and/or movement data available
+		
 		date[0] = ReceiveCharacter();		// receive date ddmmyy
 		date[1] = ReceiveCharacter();
 		date[2] = ReceiveCharacter();
@@ -141,11 +198,10 @@ int main(void)
 		calc_cs();							// calculate checksum of new frame
 		
 		// create the new GPRMC frame and transmit
-		sprintf(OutputString, "$GPRMC,%c%c%c%c%c%c,%c,%c%c%c%c.%c%c%c,%c,0%c%c%c%c.%c%c%c,%c,0,0,%c%c%c%c%c%c,,,N*%c%c", utc[0], utc[1], utc[2], utc[3], utc[4], utc[5], status, lat[0], lat[1], lat[2], lat[3], lat[4], lat[5], lat[6], lat[7], lon[0], lon[1], lon[2], lon[3], lon[4], lon[5], lon[6], lon[7], date[0], date[1], date[2], date[3], date[4], date[5], checksum[0], checksum[1]);
-		for(i = 0; i < 56; i++)
-		{
+		sprintf(OutputString, "$GPRMC,%c%c%c%c%c%c,%c,%c%c%c%c.%c%c%c,%c,%c%c%c%c%c.%c%c%c,%c,%c%c%c%c.%c%c,%c%c%c.00,%c%c%c%c%c%c,,,N*%c%c", utc[0], utc[1], utc[2], utc[3], utc[4], utc[5], status, lat[0], lat[1], lat[2], lat[3], lat[4], lat[5], lat[6], lat[7], lon[0], lon[1], lon[2], lon[3], lon[4], lon[5], lon[6], lon[7], lon[8], speed[0], speed[1], speed[2], speed[3], speed[4], speed [5], course[0], course[1], course[2], date[0], date[1], date[2], date[3], date[4], date[5], checksum[0], checksum[1]);
+		for(i = 0; i < 67; i++)
 			SendCharacter(OutputString[i]);
-		}
+			
 		SendCharacter(0x0D);				// carriage return
 		SendCharacter(0x0A);				// line feed
 	}
@@ -249,7 +305,7 @@ char ReceiveCharacter(void)
 	return ByteReceived;
 }
 
-void calc_cs(void)					// this is directly taken from ham radio operator TA1MD, just changed the name of one variable and did some formatting of code for readability
+void calc_cs(void)					// this is directly taken from ham radio operator TA1MD, just minor changes
 {
 	int cs = 0x35;
 	int i;
@@ -259,11 +315,11 @@ void calc_cs(void)					// this is directly taken from ham radio operator TA1MD, 
 	cs ^= status;
 	for(i=0; i<8; i++)
 		cs ^= lat[i];
-	for(i=0; i<8; i++)
+	for(i=0; i<9; i++)
 		cs ^= lon[i];
 	for(i=0; i<4; i++)
 		cs ^= speed[i];
-	for(i=0; i<6; i++)
+	for(i=0; i<3; i++)
 		cs ^= course[i];
 	for(i=0; i<6; i++)
 		cs ^= date[i];
@@ -275,3 +331,4 @@ void calc_cs(void)					// this is directly taken from ham radio operator TA1MD, 
 	if(checksum[1] > 57)
 		checksum[1] += 7;
 }
+
